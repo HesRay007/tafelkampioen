@@ -59,9 +59,12 @@
 
     /* Answer option grid */
     .ans-btn { min-width: 70px; min-height: 56px; font-size: 1.3rem; font-weight: 700; border-radius: 16px; border: 3px solid rgba(255,255,255,.3); transition: all .15s }
-    .ans-btn:hover { transform: scale(1.08); border-color: #fff }
+    .ans-btn:hover:not(:disabled) { transform: scale(1.08); border-color: #fff }
     .ans-btn.correct { background: #22c55e !important; border-color: #16a34a }
     .ans-btn.wrong { background: #ef4444 !important; border-color: #dc2626 }
+    
+    /* Disabled practice button */
+    .ans-btn:disabled.practice-wrong { opacity: 0.4; filter: grayscale(1); transform: none; cursor: not-allowed; border-color: transparent; }
 
     /* Badge */
     .badge-card { background: linear-gradient(135deg,#fbbf24,#f59e0b); border-radius: 16px; padding: 10px; text-align: center; color: #78350f }
@@ -92,8 +95,11 @@
         </div>
         
         <div class="flex flex-col gap-3 max-w-xs mx-auto">
-          <button onclick="showScreen('screen-select')" class="card-pop bg-white/90 text-teal-700 font-bold py-3 px-6 rounded-2xl text-lg shadow-lg flex items-center gap-3 justify-center">
-            <span class="text-2xl">🍍</span> Kies een tafel
+          <button onclick="openTableSelect('practice')" class="card-pop bg-green-400 text-green-900 font-bold py-3 px-6 rounded-2xl text-lg shadow-lg flex items-center gap-3 justify-center border-2 border-white/40">
+            <span class="text-2xl">🐢</span> Rustig Oefenen
+          </button>
+          <button onclick="openTableSelect('single')" class="card-pop bg-white/90 text-teal-700 font-bold py-3 px-6 rounded-2xl text-lg shadow-lg flex items-center gap-3 justify-center">
+            <span class="text-2xl">🍍</span> Toets een tafel
           </button>
           <button onclick="startMixed()" class="card-pop bg-pink-400 text-pink-900 font-bold py-3 px-6 rounded-2xl text-lg shadow-lg flex items-center gap-3 justify-center">
             <span class="text-2xl">🥥</span> Gemixte tafels
@@ -116,7 +122,7 @@
         <button onclick="showScreen('screen-home')" class="text-white/80 mb-4 inline-flex items-center gap-1 hover:text-white">
           <i data-lucide="arrow-left" style="width:20px;height:20px"></i> Terug
         </button>
-        <h2 class="text-3xl font-bold text-white mb-4">Kies een tafel</h2>
+        <h2 id="select-title" class="text-3xl font-bold text-white mb-4">Kies een tafel</h2>
         <div class="grid grid-cols-5 gap-3" id="table-grid"></div>
       </div>
     </section>
@@ -147,7 +153,10 @@
         
         <div class="bg-white/95 rounded-3xl p-6 text-center shadow-2xl mb-4" id="question-card">
           <p class="text-gray-500 text-sm mb-1">Vraag <span id="q-num">1</span> van <span id="q-total">10</span></p>
-          <div class="text-5xl font-bold text-teal-700 my-4" id="q-text">3 × 7 = ?</div>
+          <div class="text-5xl font-bold text-teal-700 mt-4 mb-2" id="q-text">3 × 7 = ?</div>
+          
+          <div id="visual-hint" class="hidden mb-4 p-3 bg-teal-50 rounded-2xl flex flex-col items-center justify-center gap-1 overflow-x-auto min-h-[60px]"></div>
+
           <div id="answers-grid" class="grid grid-cols-2 gap-3 mt-4"></div>
           <div id="feedback-area" class="mt-3 font-bold text-lg hidden"></div>
         </div>
@@ -235,25 +244,6 @@
       </div>
     </section>
     
-    <section id="screen-battle-result" class="screen items-center justify-center p-4 relative z-10">
-      <div class="bg-white/95 rounded-3xl p-6 text-center shadow-2xl max-w-sm w-full slide-up">
-        <div class="text-5xl mb-2" id="br-emoji">🌴</div>
-        <h2 class="text-2xl font-bold text-teal-700 mb-1" id="br-title">Battle klaar!</h2>
-        <div class="flex justify-center gap-6 my-4">
-          <div class="text-center">
-            <div class="text-3xl font-bold text-green-500" id="br-player">0</div>
-            <div class="text-xs text-gray-400">🧑 Jij</div>
-          </div>
-          <div class="text-2xl font-bold text-gray-300 self-center">VS</div>
-          <div class="text-center">
-            <div class="text-3xl font-bold text-red-400" id="br-cpu">0</div>
-            <div class="text-xs text-gray-400">🤖 CPU</div>
-          </div>
-        </div>
-        <button onclick="showScreen('screen-home')" class="bg-teal-600 text-white font-bold py-3 px-8 rounded-2xl text-lg card-pop w-full">🏠 Naar Start</button>
-      </div>
-    </section>
-    
     <div id="level-up-overlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50" style="display:none">
       <div class="text-center level-up-anim">
         <div class="text-7xl mb-2">⚡</div>
@@ -266,7 +256,7 @@
     let S = {
       stars: 0, badges: [], level: 1, xp: 0,
       // game
-      mode: '', table: 0, questions: [], qi: 0, score: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0,
+      pendingMode: 'single', mode: '', table: 0, questions: [], qi: 0, score: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0,
       timerOn: false, timeLeft: 0, timerId: null,
       // battle
       cpuDiff: 1, bPlayerScore: 0, bCpuScore: 0, bQi: 0, bQuestions: [],
@@ -310,11 +300,9 @@
     }
 
     function genQuestion(table) {
-      // 'a' is nu altijd het willekeurige getal (1 t/m 10)
+      // Aangepast: eerste getal is willekeurig, tweede getal is altijd de vaste tafel
       const a = Math.ceil(Math.random() * 10);
-      // 'b' is nu de gekozen tafel (of willekeurig als er voor 'gemixte tafels' is gekozen)
       const b = table || Math.ceil(Math.random() * 10);
-      
       return { a, b, answer: a * b };
     }
 
@@ -373,13 +361,19 @@
     })();
 
     // ===== TABLE SELECT =====
+    function openTableSelect(mode) {
+      S.pendingMode = mode;
+      $('select-title').textContent = mode === 'practice' ? 'Welke tafel wil je oefenen?' : 'Welke tafel wil je toetsen?';
+      showScreen('screen-select');
+    }
+
     (function initTableGrid() {
       const g = $('table-grid');
       for (let i = 1; i <= 10; i++) {
         const btn = document.createElement('button');
         btn.className = 'card-pop bg-white/90 text-teal-700 font-bold py-3 rounded-2xl text-xl shadow-lg';
         btn.textContent = i;
-        btn.onclick = () => startGame('single', i);
+        btn.onclick = () => startGame(S.pendingMode, i);
         g.appendChild(btn);
       }
     })();
@@ -391,7 +385,7 @@
       S.timerOn = mode === 'challenge';
       const count = 10;
       S.questions = [];
-      for (let i = 0; i < count; i++) S.questions.push(genQuestion(mode === 'single' ? table : 0));
+      for (let i = 0; i < count; i++) S.questions.push(genQuestion(mode === 'single' || mode === 'practice' ? table : 0));
       $('q-total').textContent = count;
       if (S.timerOn) $('timer-container').classList.remove('hidden');
       else $('timer-container').classList.add('hidden');
@@ -412,6 +406,21 @@
       $('game-streak').textContent = S.streak;
       $('game-level').textContent = S.level;
       $('feedback-area').classList.add('hidden');
+      
+      // PRACTICE MODE: Visuele hints tekenen
+      const hintDiv = $('visual-hint');
+      if (S.mode === 'practice') {
+        hintDiv.innerHTML = '';
+        for(let i = 0; i < q.a; i++) {
+          let row = document.createElement('div');
+          row.className = 'flex gap-1 text-xl drop-shadow-sm';
+          for(let j = 0; j < q.b; j++) { row.innerHTML += '🌺'; }
+          hintDiv.appendChild(row);
+        }
+        hintDiv.classList.remove('hidden');
+      } else {
+        hintDiv.classList.add('hidden');
+      }
 
       const opts = genAnswers(q.answer);
       const grid = $('answers-grid');
@@ -436,32 +445,51 @@
       const fb = $('feedback-area');
       fb.classList.remove('hidden');
 
-      document.querySelectorAll('#answers-grid .ans-btn').forEach(b => b.disabled = true);
-
       if (isCorrect) {
+        document.querySelectorAll('#answers-grid .ans-btn').forEach(b => b.disabled = true);
         btn.classList.add('correct');
         S.streak++;
         if (S.streak > S.bestStreak) S.bestStreak = S.streak;
         let pts = 10 * S.level;
-        // Streak bonus
+        // Streak bonus (minder XP en score in practice mode om farmen te voorkomen, maar wel positief)
         if (S.streak >= 3) { pts += S.streak * 2; S.boostMultiplier = 1 + (S.streak * 0.1); }
-        if (S.streak === 5) toast('🍍 Tropische Reeks!', '#f97316');
-        if (S.streak === 10) toast('🌺 Onstuitbare Aloha!', '#f472b6');
-        S.score += Math.round(pts * S.boostMultiplier);
+        if (S.mode !== 'practice') {
+           if (S.streak === 5) toast('🍍 Tropische Reeks!', '#f97316');
+           if (S.streak === 10) toast('🌺 Onstuitbare Aloha!', '#f472b6');
+        }
+        
+        let awardedPts = Math.round(pts * S.boostMultiplier);
+        if(S.mode === 'practice') awardedPts = Math.round(awardedPts / 2); // Halve punten voor oefenen
+        
+        S.score += awardedPts;
         S.correct++;
         S.stars++;
-        addXP(2);
-        fb.innerHTML = `<span class="text-green-600 pop-in">✅ Aloha! +${Math.round(pts * S.boostMultiplier)} punten${S.streak >= 3 ? ' 🔥×' + S.streak : ''}</span>`;
+        addXP(S.mode === 'practice' ? 1 : 2);
+        
+        let msg = S.mode === 'practice' ? `✅ Heel goed geteld! +${awardedPts} punten` : `✅ Aloha! +${awardedPts} punten${S.streak >= 3 ? ' 🔥×' + S.streak : ''}`;
+        fb.innerHTML = `<span class="text-green-600 pop-in">${msg}</span>`;
+        setTimeout(() => { S.qi++; showQuestion(); }, 1000);
       } else {
-        btn.classList.add('wrong');
-        S.streak = 0; S.boostMultiplier = 1;
-        S.wrong++;
-        fb.innerHTML = `<span class="text-red-500 shake" style="display:inline-block">❌ Kokosnoot! Het juiste antwoord is <strong>${q.answer}</strong></span>`;
-        $('question-card').classList.add('shake');
-        setTimeout(() => $('question-card').classList.remove('shake'), 400);
+        // FOUT ANTWOORD LOGICA
+        if (S.mode === 'practice') {
+          // Oefenmodus: Straft niet, geeft hint, laat kind opnieuw proberen
+          btn.classList.add('practice-wrong');
+          btn.disabled = true;
+          fb.innerHTML = `<span class="text-orange-500 font-medium">Niet helemaal, tel de bloemen nog eens rustig! 🌺</span>`;
+          // We gaan NIET naar de volgende vraag, ze mogen opnieuw kiezen!
+          return; 
+        } else {
+          // Gewone modus: Rood, direct antwoord laten zien, doorgaan
+          document.querySelectorAll('#answers-grid .ans-btn').forEach(b => b.disabled = true);
+          btn.classList.add('wrong');
+          S.streak = 0; S.boostMultiplier = 1;
+          S.wrong++;
+          fb.innerHTML = `<span class="text-red-500 shake" style="display:inline-block">❌ Kokosnoot! Het juiste antwoord is <strong>${q.answer}</strong></span>`;
+          $('question-card').classList.add('shake');
+          setTimeout(() => $('question-card').classList.remove('shake'), 400);
+          setTimeout(() => { S.qi++; showQuestion(); }, 1800);
+        }
       }
-
-      setTimeout(() => { S.qi++; showQuestion(); }, isCorrect ? 800 : 1800);
     }
 
     function startTimer() {
@@ -494,14 +522,21 @@
     function endGame() {
       if (S.timerId) { clearInterval(S.timerId); S.timerId = null; }
       // Check special badges
-      if (S.correct === S.questions.length) awardBadge('perfect');
+      if (S.correct === S.questions.length && S.mode !== 'practice') awardBadge('perfect');
       if (S.mode === 'challenge') awardBadge('speed');
       const newB = checkBadges();
 
       const pct = S.correct / S.questions.length;
       $('result-emoji').textContent = pct >= .8 ? '🎉' : pct >= .5 ? '🥥' : '🌺';
-      $('result-title').textContent = pct >= .8 ? 'Fantastisch!' : pct >= .5 ? 'Goed gedaan!' : 'Blijf oefenen!';
-      $('result-subtitle').textContent = pct >= .8 ? 'Je bent een tafelkampioen!' : pct >= .5 ? 'Aloha! Dat ging goed!' : '🌴 Aloha! Oefening baart kunst!';
+      
+      if (S.mode === 'practice') {
+        $('result-title').textContent = 'Goed geoefend!';
+        $('result-subtitle').textContent = 'Je snapt het al een stuk beter! 🐢';
+      } else {
+        $('result-title').textContent = pct >= .8 ? 'Fantastisch!' : pct >= .5 ? 'Goed gedaan!' : 'Blijf oefenen!';
+        $('result-subtitle').textContent = pct >= .8 ? 'Je bent een tafelkampioen!' : pct >= .5 ? 'Aloha! Dat ging goed!' : '🌴 Aloha! Oefening baart kunst!';
+      }
+      
       $('res-score').textContent = S.score;
       $('res-correct').textContent = S.correct;
       $('res-wrong').textContent = S.wrong;
@@ -529,7 +564,6 @@
       });
     }
 
-    // Override showScreen to also render badges
     const _show = showScreen;
     showScreen = function(id) {
       _show(id);
@@ -596,13 +630,11 @@
         btn.classList.add('correct');
         S.bPlayerScore++;
         fb.innerHTML = '<span class="text-green-600">✅ Aloha! Goed!</span>';
-        // CPU still gets chance
         const cpuCorrect = S.cpuDiff === 1 ? Math.random() < .4 : S.cpuDiff === 2 ? Math.random() < .65 : Math.random() < .85;
         if (cpuCorrect) S.bCpuScore++;
       } else {
         btn.classList.add('wrong');
         fb.innerHTML = `<span class="text-red-500">❌ Kokosnoot! Antwoord: ${q.answer}</span>`;
-        // CPU more likely correct when player wrong
         const cpuCorrect = S.cpuDiff === 1 ? Math.random() < .6 : Math.random() < .8;
         if (cpuCorrect) S.bCpuScore++;
       }
@@ -631,28 +663,8 @@
       showScreen('screen-battle-result');
     }
 
-    // ===== ELEMENT SDK =====
-    const defaultConfig = {
-      main_title: 'Tafel Kampioen',
-      subtitle: 'Aloha! Reken mee met Lilo & Stitch!',
-      background_color: '#a7f3d0',
-      surface_color: '#ffffff',
-      text_color: '#0e7490',
-      primary_action: '#3b82f6',
-      secondary_action: '#f472b6'
-    };
-
-    function applyConfig(config) {
-      const c = { ...defaultConfig, ...config };
-      $('el-title').textContent = c.main_title;
-      $('el-subtitle').textContent = c.subtitle;
-      document.querySelectorAll('.bg-game').forEach(el => {
-        el.style.background = `linear-gradient(135deg, ${c.background_color} 0%, ${c.primary_action} 50%, ${c.secondary_action} 100%)`;
-        el.style.backgroundSize = '400% 400%';
-      });
-    }
-
     lucide.createIcons();
   </script>
 </body>
 </html>
+
