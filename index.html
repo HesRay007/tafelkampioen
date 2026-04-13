@@ -310,8 +310,11 @@
     }
 
     function genQuestion(table) {
-      const a = table || Math.ceil(Math.random() * 10);
-      const b = Math.ceil(Math.random() * 10);
+      // 'a' is nu altijd het willekeurige getal (1 t/m 10)
+      const a = Math.ceil(Math.random() * 10);
+      // 'b' is nu de gekozen tafel (of willekeurig als er voor 'gemixte tafels' is gekozen)
+      const b = table || Math.ceil(Math.random() * 10);
+      
       return { a, b, answer: a * b };
     }
 
